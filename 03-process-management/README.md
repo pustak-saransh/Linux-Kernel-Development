@@ -11,7 +11,7 @@
 - In linux, process is created using `fork()` system call, which creates a new process by duplicating an existing one.
 - Parent resumes execution & child starts execution where `fork()` returns. `fork()` syscall returns twice from kernel (parent & child)
 - As child is running same program, it is desirable to to call `exec()` immediately after `fork()` to create a new address space & loads a new program into it.
-- program exists via `exist()` syscall. parent can wait for child to exit using `wait4()` syscall.
+- program exists via `exit()` syscall. parent can wait for child to exit using `wait4()` syscall.
 
 ## Process Descriptor & Task Structure
 
@@ -31,7 +31,7 @@
 - System identifies process by **unique process identification (pid)**. PID is numerial value represented by opaque type`pid_t` which is typically an `int`.
 - Maximun value can be **32768** which can be increased as high as fpur million (check [<linux/threads.h>](https://github.com/torvalds/linux/blob/v5.17/include/linux/threads.h))
 - If system is willing to break compatibility with old applications, max value can be increased via `proc/sys/kernel/pid_max`
-- Inside kernel, tasks are typically referenced directly by a pointer to their `task_struct`. Which is done via `current` macro (This macro must be independently implemented by each architecture). Generic `current` macro defined [<asm-generic/current.h>](https://github.com/torvalds/linux/blob/v5.17/include/asm-generic/current.h) which calls function `get_current()` which calls `current_thread_info()`. Arch specific, for [x86](https://github.com/torvalds/linux/blob/v5.17/arch/x86/include/asm/current.h))
+- Inside kernel, tasks are typically referenced directly by a pointer to their `task_struct`. Which is done via `current` macro (This macro must be independently implemented by each architecture). Generic `current` macro defined [<asm-generic/current.h>](https://github.com/torvalds/linux/blob/v5.17/include/asm-generic/current.h) which calls function `get_current()` which calls `current_thread_info()`. (Arch specific, for [x86](https://github.com/torvalds/linux/blob/v5.17/arch/x86/include/asm/current.h))
 - Some architectures save pointer to `task_struct` of currently running process in a register, enabling efficient access.
 
 ## Process State
@@ -102,3 +102,36 @@ for_each_process(task) {
 - When child write, duplicate is made available.
 
 ### Forking
+
+- Linux implements fork() via the clone() system call.This call takes a series of flags that specify which resources, if any, the parent and child process should share. (Check [syscalls declared](https://github.com/torvalds/linux/blob/master/include/linux/syscalls.h) | [definition](https://github.com/torvalds/linux/blob/master/kernel/fork.c))
+- syscall `fork()` calls routine `pid_t kernel_clone(struct kernel_clone_args *args)`. [Check routine](https://github.com/torvalds/linux/blob/master/kernel/fork.c#L2614)
+- `kernel_clone` internally calls `copy_process` [Check routine](https://github.com/torvalds/linux/blob/master/kernel/fork.c#L1975)
+  ```c
+  static __latent_entropy struct task_struct *copy_process(
+					struct pid *pid,
+					int trace,
+					int node,
+					struct kernel_clone_args *args)
+  ```
+- Deliberately, the kernel runs the child process first.8 In the common case of the child simply calling exec() immediately, this eliminates any copy-on-write overhead that would occur if the parent ran first and began wr iting to the address space.
+
+### vfork()
+
+The `vfork()` system call has the same effect as `fork()`, except that the **page table entries of the parent process are not copied**. Instead, the child executes as the sole thread in the parent’s address space, and the **parent is blocked until the child either calls `exec()` or exits**. The child is **not allowed to write to the address space**.
+
+```c
+//https://github.com/torvalds/linux/blob/master/kernel/fork.c#L2727-L2753
+
+// fork args
+struct kernel_clone_args args = {
+    .exit_signal = SIGCHLD,
+};
+
+// vfork args
+struct kernel_clone_args args = {
+    .flags		= CLONE_VFORK | CLONE_VM,
+    .exit_signal	= SIGCHLD,
+};
+```
+
+- Inside `kernel_clone`, special flag `CLONE_VFORK` is checked [here](https://github.com/torvalds/linux/blob/master/kernel/fork.c#L2673)
