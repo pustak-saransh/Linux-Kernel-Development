@@ -103,9 +103,9 @@ for_each_process(task) {
 
 ### Forking
 
-- Linux implements fork() via the clone() system call.This call takes a series of flags that specify which resources, if any, the parent and child process should share. (Check [syscalls declared](https://github.com/torvalds/linux/blob/master/include/linux/syscalls.h) | [definition](https://github.com/torvalds/linux/blob/master/kernel/fork.c))
-- syscall `fork()` calls routine `pid_t kernel_clone(struct kernel_clone_args *args)`. [Check routine](https://github.com/torvalds/linux/blob/master/kernel/fork.c#L2614)
-- `kernel_clone` internally calls `copy_process` [Check routine](https://github.com/torvalds/linux/blob/master/kernel/fork.c#L1975)
+- Linux implements fork() via the clone() system call.This call takes a series of flags that specify which resources, if any, the parent and child process should share. (Check [syscalls declared](https://github.com/torvalds/linux/blob/v5.17/include/linux/syscalls.h) | [definition](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c))
+- syscall `fork()` calls routine `pid_t kernel_clone(struct kernel_clone_args *args)`. [Check kernel_clone](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2524)
+- `kernel_clone` internally calls `copy_process` [Check copy_process](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L1902)
   ```c
   static __latent_entropy struct task_struct *copy_process(
 					struct pid *pid,
