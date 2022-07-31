@@ -113,14 +113,14 @@ for_each_process(task) {
 					int node,
 					struct kernel_clone_args *args)
   ```
-- Deliberately, the kernel runs the child process first.8 In the common case of the child simply calling exec() immediately, this eliminates any copy-on-write overhead that would occur if the parent ran first and began wr iting to the address space.
+- Deliberately, the kernel runs the child process first. In the common case of the child simply calling exec() immediately, this **eliminates any copy-on-write overhead** that would occur if the parent ran first and began wr iting to the address space.
 
 ### vfork()
 
 The `vfork()` system call has the same effect as `fork()`, except that the **page table entries of the parent process are not copied**. Instead, the child executes as the sole thread in the parent’s address space, and the **parent is blocked until the child either calls `exec()` or exits**. The child is **not allowed to write to the address space**.
 
 ```c
-//https://github.com/torvalds/linux/blob/master/kernel/fork.c#L2727-L2753
+//https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2620-L2646
 
 // fork args
 struct kernel_clone_args args = {
@@ -134,4 +134,76 @@ struct kernel_clone_args args = {
 };
 ```
 
-- Inside `kernel_clone`, special flag `CLONE_VFORK` is checked [here](https://github.com/torvalds/linux/blob/master/kernel/fork.c#L2673)
+#### How `vfork()` is done?
+
+1. In `copy_process()`, the `task_struct` member `vfork_done` (of type [`completion`](https://github.com/torvalds/linux/blob/v5.17/include/linux/completion.h#L26-L29)) is set to `NULL` ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2051))
+2. In `kernel_clone` (previously `do_fork`), if special flag (`CLONE_VFORK`) was given, `vfork_done` is pointed at specific address. ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2583-L2587))
+3. After the child is first run, the parent —instead of returning— waits for the child to signal it through the `vfork_done` pointer.
+4. In the `mm_release()` function, which is used when a task exits a memory address space, `vfork_done` is checked to see whether it is `NULL`. If it is not, the parent is signaled. ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L1410-L1411))
+5. Back in `kernel_clone()`, the parent wakes up and returns.
+
+>If this all goes as planned, the **child is now executing in a new address space or exited**, and the parent is again executing in its original address space
+
+## Linux Implementation of Threads
+
+Threads provide multiple threads of execution within the same program in **shared memory address space (can also share open files & other resources)**.
+
+> To linux kernel, there is no concept of thread. Linux implements all threads as standard process. **thread is a process that shares certain resources with other processes**. Each thread has its unique `task_struct`.
+
+### Creating Threads
+
+It is same as normal tasks, with the exception that `clone()` syscall is passed flags (flags are part of structure `kernel_clone_args`) ([flags](https://github.com/torvalds/linux/blob/v5.17/include/uapi/linux/sched.h#L10-L44) | [kernel_clone_args](https://github.com/torvalds/linux/blob/v5.17/include/linux/sched/task.h#L21-L37)) corresponding to specific resources to be shared. ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2152-L2175))
+
+```c
+// normal fork
+clone(SIGCHLD, 0);
+
+// vfork
+clone(CLONE_VFORK | CLONE_VM | SIGNCHLD, 0);
+
+// Threads
+// fork the process but share
+// address space, filesystem, file descriptors, signal handlers
+clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND, 0);
+```
+
+- **Declaration**: [clone()](https://github.com/torvalds/linux/blob/v5.17/include/linux/syscalls.h#L886-L897) | [clone3()](https://github.com/torvalds/linux/blob/v5.17/include/linux/syscalls.h#L899)
+- **Definition**: [clone()](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2648-L2684) | [clone3()](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2686L2842)
+
+### Kernel Threads
+
+- Kernel does some operations in background via *kernel threads*—**standard processes that exist solely in kernel-space.**
+>Unlike normal processes, kernel threads do not have an address space. (their `mm` pointer is `NULL`)
+- They operate only in kernel space and do not context switch into user space. These threads are **schedulable & preempatble**, same as normal processes.
+- Examples of kernel thread `flush` tasks & `ksoftirqd` task
+- Kernel threads are created on system boot by **other kernel threads only.** and it is done by forking `kthreadd` kernel process. ([linux/kthread.h](https://github.com/torvalds/linux/blob/v5.17/include/linux/kthread.h))
+
+#### How kernel thread gets created?
+
+- Existing kernel thread can spawn new kernel thread using macro `kthread_create()` which calls `kthread_create_on_node()` ([linux/kthread.h](https://github.com/torvalds/linux/blob/v5.17/include/linux/kthread.h))
+
+**WIP**
+
+## Process Termination
+
+When a process terminates, the **kernel releases the resources owned by the process** and **notifies the child’s parent** of its demise.
+
+To die, process can call `exit()` ([kernel/exit.c](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L900-L903)) syscall which internally calls `[do_exit()](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L733-L858)`.
+
+#### What `do_exit()` does?
+
+**WIP**
+
+>The task is not runnable (and no longer has an address space in which to run) and is in the `EXIT_ZOMBIE` exit state.The only memory it occupies is its **kernel stack, thethread_info structure, and the task_struct structure**.The task exists solely to **provide information to its parent**. After the parent retrieves the information, or notifies the kernel that it is uninterested, the remaining memory held by the process is freed and returned to the system for use.
+
+### Remove Process Descriptor
+
+When parent acknoledged about child's death, now finally deallocation of process descriptor can be done using `release_task()` ([kernel/exit.c#release_task](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L183-L231))
+
+### Dilemma of Parentless Task
+
+If a parent exits before its children, some mechanism must exist to reparent any child tasks to a new process, or else parentless terminated processes would forever remain zombies, wasting system memory.The solution is to reparent a task’s children on exit to **either another process in the current thread group or, if that fails, the init process**.
+
+`do_exit()` calls [`exit_notify(tsk, group_dead);`](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L826). `exit_notify` will tell all relatives about demise. ([kernel/exit.c#exit_notify](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L663-L707))
+
+**WIP**
