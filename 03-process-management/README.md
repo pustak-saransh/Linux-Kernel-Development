@@ -16,23 +16,23 @@
 ## Process Descriptor & Task Structure
 
 - kernel stores list of processes in a **circular doubly linked list** called `task list`.
-- each element in the task list is **process descriptor** of the type `struct task_struct` which is defined in [<linux/sched.h>](https://github.com/torvalds/linux/blob/v5.17/include/linux/sched.h#L728)
+- each element in the task list is **process descriptor** of the type `struct task_struct` which is defined in [<linux/sched.h>][linux/sched.h#task_struct]
 
 ### Allocating Process Descriptor
 
 - `task_struct` is allocated via **slab allocator** to provide object reuse and cache coloring.
 - Prior to 2.6 kernel series, `struct task_struct` was stored to end of the kernel stack of each process. This allowed architectures with few registers, such as x86, to calculate the location of process description via **stack pointer** without using extra register to store location.
-- with process descriptor now dynamically created via slab allocator, new structure `struct thread_info` [x86 <asm/thread_info.h>](https://github.com/torvalds/linux/blob/v5.17/arch/x86/include/asm/thread_info.h) | [How 'task_struct' is accessed via 'thread_info' in linux latest kernel?](https://stackoverflow.com/questions/70043591/how-task-struct-is-accessed-via-thread-info-in-linux-latest-kernel) was created that again lives to end of kernel stack.
+- with process descriptor now dynamically created via slab allocator, new structure `struct thread_info` [x86 <asm/thread_info.h>][x86/include/asm/thread_info.h#thread_info] | [How 'task_struct' is accessed via 'thread_info' in linux latest kernel?](https://stackoverflow.com/questions/70043591/how-task-struct-is-accessed-via-thread-info-in-linux-latest-kernel) was created that again lives to end of kernel stack.
 
 ![process descriptor & kernel stack](./images/process-descriptor-and-kernel-stack.PNG)
 
 ### Storing Process Descriptor
 
 - System identifies process by **unique process identification (pid)**. PID is numerial value represented by opaque type`pid_t` which is typically an `int`.
-- Maximun value can be **32768** which can be increased as high as fpur million (check [<linux/threads.h>](https://github.com/torvalds/linux/blob/v5.17/include/linux/threads.h))
+- Maximun value can be **32768** which can be increased as high as four million (check [<linux/threads.h>](https://github.com/torvalds/linux/blob/v5.17/include/linux/threads.h))
 - If system is willing to break compatibility with old applications, max value can be increased via `proc/sys/kernel/pid_max`
-- Inside kernel, tasks are typically referenced directly by a pointer to their `task_struct`. Which is done via `current` macro (This macro must be independently implemented by each architecture). Generic `current` macro defined [<asm-generic/current.h>](https://github.com/torvalds/linux/blob/v5.17/include/asm-generic/current.h) which calls function `get_current()` which calls `current_thread_info()`. (Arch specific, for [x86](https://github.com/torvalds/linux/blob/v5.17/arch/x86/include/asm/current.h))
-- Some architectures save pointer to `task_struct` of currently running process in a register, enabling efficient access.
+- Inside kernel, tasks are typically referenced directly by a pointer to their [`task_struct`][linux/sched.h#task_struct]. Which is done via `current` macro (This macro must be independently implemented by each architecture). Generic `current` macro defined [<asm-generic/current.h>](https://github.com/torvalds/linux/blob/v5.17/include/asm-generic/current.h) which calls function `get_current()` which calls `current_thread_info()`. (Arch specific, for [x86](https://github.com/torvalds/linux/blob/v5.17/arch/x86/include/asm/current.h))
+- Some architectures save pointer to [`task_struct`][linux/sched.h#task_struct] of currently running process in a register, enabling efficient access.
 
 ## Process State
 
@@ -78,7 +78,7 @@ set_current_state(state);
 
 - All processes are descendants of `init` process (PID=1). Kernel starts `init` in last step of boot process. `init` process reads system **initscripts** and execute more programs.
 - Every process on system has exactly **one parent** and **zero or more children**.
-- relationship between processes is stored in process descriptor. Each `task_struct` has a pointer to parent's `task_struct` named `parent` and list of children, named `children` ([Check](https://github.com/torvalds/linux/blob/v5.17/include/linux/sched.h#L954-L970))
+- relationship between processes is stored in process descriptor. Each [`task_struct`][linux/sched.h#task_struct] has a pointer to parent's [`task_struct`][linux/sched.h#task_struct] named `parent` and list of children, named `children` ([Check](https://github.com/torvalds/linux/blob/v5.17/include/linux/sched.h#L954-L970))
 - `init` task's descriptor is statically allocated as `init_task`
 
 ```c
@@ -104,8 +104,8 @@ for_each_process(task) {
 ### Forking
 
 - Linux implements fork() via the clone() system call.This call takes a series of flags that specify which resources, if any, the parent and child process should share. (Check [syscalls declared](https://github.com/torvalds/linux/blob/v5.17/include/linux/syscalls.h) | [definition](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c))
-- syscall `fork()` calls routine `pid_t kernel_clone(struct kernel_clone_args *args)`. [Check kernel_clone](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2524)
-- `kernel_clone` internally calls `copy_process` [Check copy_process](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L1902)
+- syscall `fork()` calls routine [`pid_t kernel_clone(struct kernel_clone_args *args)`](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2524)
+- `kernel_clone` internally calls [`copy_process`](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L1902)
   ```c
   static __latent_entropy struct task_struct *copy_process(
 					struct pid *pid,
@@ -136,10 +136,10 @@ struct kernel_clone_args args = {
 
 #### How `vfork()` is done?
 
-1. In `copy_process()`, the `task_struct` member `vfork_done` (of type [`completion`](https://github.com/torvalds/linux/blob/v5.17/include/linux/completion.h#L26-L29)) is set to `NULL` ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2051))
-2. In `kernel_clone` (previously `do_fork`), if special flag (`CLONE_VFORK`) was given, `vfork_done` is pointed at specific address. ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2583-L2587))
+1. In [`copy_process()`][kernel/fork.c#copy_process], the [`task_struct`][linux/sched.h#task_struct] member `vfork_done` (of type [`completion`][linux/completion.h#completion]) is set to `NULL` ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2051))
+2. In [`kernel_clone`][kernel/fork.c#kernel_clone] (previously `do_fork`), if special flag (`CLONE_VFORK`) was given, `vfork_done` is pointed at specific address. ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2583-L2587))
 3. After the child is first run, the parent —instead of returning— waits for the child to signal it through the `vfork_done` pointer.
-4. In the `mm_release()` function, which is used when a task exits a memory address space, `vfork_done` is checked to see whether it is `NULL`. If it is not, the parent is signaled. ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L1410-L1411))
+4. In the [`mm_release()`][kernel/fork.c#mm_release] function, which is used when a task exits a memory address space, `vfork_done` is checked to see whether it is `NULL`. If it is not, the parent is signaled. ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L1410-L1411))
 5. Back in `kernel_clone()`, the parent wakes up and returns.
 
 >If this all goes as planned, the **child is now executing in a new address space or exited**, and the parent is again executing in its original address space
@@ -152,7 +152,7 @@ Threads provide multiple threads of execution within the same program in **share
 
 ### Creating Threads
 
-It is same as normal tasks, with the exception that `clone()` syscall is passed flags (flags are part of structure `kernel_clone_args`) ([flags](https://github.com/torvalds/linux/blob/v5.17/include/uapi/linux/sched.h#L10-L44) | [kernel_clone_args](https://github.com/torvalds/linux/blob/v5.17/include/linux/sched/task.h#L21-L37)) corresponding to specific resources to be shared. ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2152-L2175))
+It is same as normal tasks, with the exception that `clone()` syscall is passed flags ([**flags**][uapi/linux/sched.h#flags] are part of structure [`kernel_clone_args`][linux/sched/task.h#kernel_clone_args]) corresponding to specific resources to be shared. ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2152-L2175))
 
 ```c
 // normal fork
@@ -180,7 +180,7 @@ clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND, 0);
 
 #### How kernel thread gets created?
 
-- Existing kernel thread can spawn new kernel thread using macro `kthread_create()` which calls `kthread_create_on_node()` ([linux/kthread.h](https://github.com/torvalds/linux/blob/v5.17/include/linux/kthread.h))
+- Existing kernel thread can spawn new kernel thread using macro `kthread_create()` which calls [`linux/kthread.h#kthread_create_on_node()`](https://github.com/torvalds/linux/blob/v5.17/include/linux/kthread.h)
 
 **WIP**
 
@@ -188,7 +188,7 @@ clone(CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND, 0);
 
 When a process terminates, the **kernel releases the resources owned by the process** and **notifies the child’s parent** of its demise.
 
-To die, process can call `exit()` ([kernel/exit.c](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L900-L903)) syscall which internally calls `[do_exit()](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L733-L858)`.
+To die, process can call ([`exit()`](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L900-L903)) syscall which internally calls [`do_exit()`][kernel/exit.c#do_exit].
 
 #### What `do_exit()` does?
 
@@ -198,12 +198,24 @@ To die, process can call `exit()` ([kernel/exit.c](https://github.com/torvalds/l
 
 ### Remove Process Descriptor
 
-When parent acknoledged about child's death, now finally deallocation of process descriptor can be done using `release_task()` ([kernel/exit.c#release_task](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L183-L231))
+When parent acknoledged about child's death, now finally deallocation of process descriptor can be done using [`kernel/exit.c#release_task()`][kernel/exit.c#release_task]
 
 ### Dilemma of Parentless Task
 
 If a parent exits before its children, some mechanism must exist to reparent any child tasks to a new process, or else parentless terminated processes would forever remain zombies, wasting system memory.The solution is to reparent a task’s children on exit to **either another process in the current thread group or, if that fails, the init process**.
 
-`do_exit()` calls [`exit_notify(tsk, group_dead);`](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L826). `exit_notify` will tell all relatives about demise. ([kernel/exit.c#exit_notify](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L663-L707))
+[`do_exit()`][kernel/exit.c#do_exit] calls [`exit_notify(tsk, group_dead);`](https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L826). `exit_notify` will tell all relatives about demise. ([kernel/exit.c#exit_notify][kernel/exit.c#exit_notify])
 
 **WIP**
+
+[linux/sched.h#task_struct]: https://github.com/torvalds/linux/blob/v5.17/include/linux/sched.h#L728-L1510
+[x86/include/asm/thread_info.h#thread_info]: https://github.com/torvalds/linux/blob/v5.17/arch/x86/include/asm/thread_info.h
+[kernel/fork.c#copy_process]: https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L1894-L2461
+[linux/completion.h#completion]: https://github.com/torvalds/linux/blob/v5.17/include/linux/completion.h#L26-L29
+[kernel/fork.c#kernel_clone]: https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2516-L2602
+[kernel/fork.c#mm_release]: https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L1368-L1412
+[uapi/linux/sched.h#flags]: https://github.com/torvalds/linux/blob/v5.17/include/uapi/linux/sched.h#L10-L44
+[linux/sched/task.h#kernel_clone_args]: https://github.com/torvalds/linux/blob/v5.17/include/linux/sched/task.h#L21-L37
+[kernel/exit.c#do_exit]: https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L733-L858
+[kernel/exit.c#release_task]: https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L183-L231
+[kernel/exit.c#exit_notify]: https://github.com/torvalds/linux/blob/v5.17/kernel/exit.c#L663-L707
