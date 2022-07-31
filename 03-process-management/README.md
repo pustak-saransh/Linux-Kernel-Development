@@ -16,19 +16,19 @@
 ## Process Descriptor & Task Structure
 
 - kernel stores list of processes in a **circular doubly linked list** called `task list`.
-- each element in the task list is **process descriptor** of the type `struct task_struct` which is defined in [<linux/sched.h>][linux/sched.h#task_struct]
+- each element in the task list is **process descriptor** of the type [`struct task_struct`][linux/sched.h#task_struct] which is defined in [<linux/sched.h>][linux/sched.h#task_struct]
 
 ### Allocating Process Descriptor
 
-- `task_struct` is allocated via **slab allocator** to provide object reuse and cache coloring.
-- Prior to 2.6 kernel series, `struct task_struct` was stored to end of the kernel stack of each process. This allowed architectures with few registers, such as x86, to calculate the location of process description via **stack pointer** without using extra register to store location.
+- [`task_struct`][linux/sched.h#task_struct] is allocated via **slab allocator** to provide object reuse and cache coloring.
+- Prior to 2.6 kernel series, [`struct task_struct`][linux/sched.h#task_struct] was stored to end of the kernel stack of each process. This allowed architectures with few registers, such as x86, to calculate the location of process description via **stack pointer** without using extra register to store location.
 - with process descriptor now dynamically created via slab allocator, new structure `struct thread_info` [x86 <asm/thread_info.h>][x86/include/asm/thread_info.h#thread_info] | [How 'task_struct' is accessed via 'thread_info' in linux latest kernel?](https://stackoverflow.com/questions/70043591/how-task-struct-is-accessed-via-thread-info-in-linux-latest-kernel) was created that again lives to end of kernel stack.
 
 ![process descriptor & kernel stack](./images/process-descriptor-and-kernel-stack.PNG)
 
 ### Storing Process Descriptor
 
-- System identifies process by **unique process identification (pid)**. PID is numerial value represented by opaque type`pid_t` which is typically an `int`.
+- System identifies process by **unique process identification (pid)**. PID is numerial value represented by opaque type `pid_t` which is typically an `int`.
 - Maximun value can be **32768** which can be increased as high as four million (check [<linux/threads.h>](https://github.com/torvalds/linux/blob/v5.17/include/linux/threads.h))
 - If system is willing to break compatibility with old applications, max value can be increased via `proc/sys/kernel/pid_max`
 - Inside kernel, tasks are typically referenced directly by a pointer to their [`task_struct`][linux/sched.h#task_struct]. Which is done via `current` macro (This macro must be independently implemented by each architecture). Generic `current` macro defined [<asm-generic/current.h>](https://github.com/torvalds/linux/blob/v5.17/include/asm-generic/current.h) which calls function `get_current()` which calls `current_thread_info()`. (Arch specific, for [x86](https://github.com/torvalds/linux/blob/v5.17/arch/x86/include/asm/current.h))
@@ -105,7 +105,7 @@ for_each_process(task) {
 
 - Linux implements fork() via the clone() system call.This call takes a series of flags that specify which resources, if any, the parent and child process should share. (Check [syscalls declared](https://github.com/torvalds/linux/blob/v5.17/include/linux/syscalls.h) | [definition](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c))
 - syscall `fork()` calls routine [`pid_t kernel_clone(struct kernel_clone_args *args)`](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2524)
-- `kernel_clone` internally calls [`copy_process`](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L1902)
+- [`kernel_clone`][kernel/fork.c#kernel_clone] internally calls [`copy_process`](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L1902)
   ```c
   static __latent_entropy struct task_struct *copy_process(
 					struct pid *pid,
@@ -140,7 +140,7 @@ struct kernel_clone_args args = {
 2. In [`kernel_clone`][kernel/fork.c#kernel_clone] (previously `do_fork`), if special flag (`CLONE_VFORK`) was given, `vfork_done` is pointed at specific address. ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L2583-L2587))
 3. After the child is first run, the parent —instead of returning— waits for the child to signal it through the `vfork_done` pointer.
 4. In the [`mm_release()`][kernel/fork.c#mm_release] function, which is used when a task exits a memory address space, `vfork_done` is checked to see whether it is `NULL`. If it is not, the parent is signaled. ([Ref](https://github.com/torvalds/linux/blob/v5.17/kernel/fork.c#L1410-L1411))
-5. Back in `kernel_clone()`, the parent wakes up and returns.
+5. Back in [`kernel_clone()`][kernel/fork.c#kernel_clone], the parent wakes up and returns.
 
 >If this all goes as planned, the **child is now executing in a new address space or exited**, and the parent is again executing in its original address space
 
